@@ -11,3 +11,4 @@ python-dotenv==1.0.1
 black==24.4.2
 flake8==7.0.0
 slowapi==0.1.9
+psycopg2-binary==2.9.9
