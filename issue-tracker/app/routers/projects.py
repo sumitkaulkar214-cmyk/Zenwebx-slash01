@@ -1,16 +1,22 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List
 
 from app.database import get_db
-from app.models import Project
+from app.models import Project, User
 from app.schemas import ProjectCreate, ProjectRead
+from app.security import require_admin
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
 
+# Only admins can create projects
 @router.post("", response_model=ProjectRead, status_code=201, summary="Create a new project")
-def create_project(project_in: ProjectCreate, db: Session = Depends(get_db)):
+def create_project(
+    project_in: ProjectCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
     # Check for duplicate project name
     existing = db.query(Project).filter(Project.name == project_in.name).first()
     if existing:
@@ -24,8 +30,12 @@ def create_project(project_in: ProjectCreate, db: Session = Depends(get_db)):
 
 
 @router.get("", response_model=List[ProjectRead], summary="List all projects")
-def list_projects(db: Session = Depends(get_db)):
-    return db.query(Project).all()
+def list_projects(
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(20, ge=1, le=100, description="Maximum number of records to return"),
+    db: Session = Depends(get_db),
+):
+    return db.query(Project).offset(skip).limit(limit).all()
 
 
 @router.get("/{project_id}", response_model=ProjectRead, summary="Get a single project by ID")

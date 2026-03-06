@@ -1,9 +1,15 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+
+limiter = Limiter(key_func=get_remote_address)
 
 from app.database import engine, Base
-import app.models  # ensures Base.metadata discovers all models
+import app.models as _models  # noqa: F401 — ensures Base.metadata discovers all models
 from app.routers import users, projects, tickets
 
 # ---------------------------------------------------------------------------
@@ -26,6 +32,36 @@ A lightweight issue tracking REST API.
     contact={"name": "Engineering Team"},
 )
 
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# ---------------------------------------------------------------------------
+# CORS middleware
+# TODO: Replace localhost origins with real frontend domain before deploying
+# ---------------------------------------------------------------------------
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PATCH", "DELETE"],
+    allow_headers=["Authorization", "Content-Type"],
+)
+
+
+# ---------------------------------------------------------------------------
+# HTTP security headers middleware
+# ---------------------------------------------------------------------------
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 # ---------------------------------------------------------------------------
 # Startup event — create DB tables if they don't exist
 # ---------------------------------------------------------------------------
@@ -34,16 +70,25 @@ def startup():
     Base.metadata.create_all(bind=engine)
     print("  Database tables verified.")
 
+
 # ---------------------------------------------------------------------------
 # Global exception handler — catches any unhandled exception
 # ---------------------------------------------------------------------------
 @app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    print(f"Unhandled error: {exc}")
+async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """
+    Catch-all handler. Logs the real error server-side but returns
+    a generic message to the client so internal details are never leaked.
+    """
+    import traceback
+    # Log full traceback to server console only — never send to client
+    print(f"[ERROR] Unhandled exception on {request.method} {request.url}")
+    print(traceback.format_exc())
     return JSONResponse(
         status_code=500,
-        content={"detail": "An unexpected server error occurred."},
+        content={"detail": "An unexpected error occurred. Please try again later."},
     )
+
 
 # ---------------------------------------------------------------------------
 # Router registration
@@ -51,6 +96,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 app.include_router(users.router)
 app.include_router(projects.router)
 app.include_router(tickets.router)
+
 
 # ---------------------------------------------------------------------------
 # Root endpoint
@@ -62,6 +108,7 @@ def root():
         "docs": "/docs",
         "version": "1.0.0",
     }
+
 
 # ---------------------------------------------------------------------------
 # Health check endpoint

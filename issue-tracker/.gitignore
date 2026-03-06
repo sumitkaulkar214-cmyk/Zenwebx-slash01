@@ -2,6 +2,7 @@ venv/
 __pycache__/
 *.pyc
 *.db
+# Environment secrets — never commit this
 .env
 .DS_Store
 .idea/

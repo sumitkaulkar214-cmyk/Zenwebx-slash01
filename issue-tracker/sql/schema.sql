@@ -2,6 +2,8 @@ CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     email TEXT NOT NULL UNIQUE,
+    hashed_password TEXT NOT NULL DEFAULT '',
+    role TEXT NOT NULL DEFAULT 'member',
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
